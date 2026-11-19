@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  TECHNICIAN
+  USER
+}
+
+enum AssetStatus {
+  ACTIVE
+  MAINTENANCE
+  BROKEN
+  INACTIVE
+}
+
+enum MaintenanceType {
+  PREVENTIVE
+  CORRECTIVE
+  TROUBLESHOOTING
+  HARDWARE_UPGRADE
+  SOFTWARE_MAINTENANCE
+}
+
+enum MaintenanceStatus {
+  PENDING
+  IN_PROGRESS
+  WAITING_PARTS
+  COMPLETED
+  CANCELLED
+}
+
+enum MaintenanceResult {
+  NORMAL
+  NEEDS_REPAIR
+  WAITING_PARTS
+  NOT_OPERATIONAL
+}
+
+enum SignerRole {
+  TECHNICIAN
+  USER
+}
+
+enum ScheduleStatus {
+  SCHEDULED
+  COMPLETED
+  OVERDUE
+  CANCELLED
+}
+
+model User {
+  id       Int      @id @default(autoincrement())
+  name     String   @db.VarChar(150)
+  username String   @unique @db.VarChar(50)
+  email    String?  @unique @db.VarChar(150)
+  password String   @db.VarChar(255)
+  role     UserRole @default(USER)
+  isActive Boolean  @default(true) @map("is_active")
+
+  maintenanceRecords MaintenanceRecord[]    @relation("TechnicianRecords")
+  signatures         MaintenanceSignature[]
+  schedulesCreated   MaintenanceSchedule[]  @relation("ScheduleCreator")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model AssetCategory {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique @db.VarChar(100)
+  description String? @db.Text
+  isActive    Boolean @default(true) @map("is_active")
+
+  assets Asset[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("asset_categories")
+}
+
+model Asset {
+  id         Int    @id @default(autoincrement())
+  assetCode  String @unique @map("asset_code") @db.VarChar(50)
+  name       String @db.VarChar(150)
+  categoryId Int    @map("category_id")
+
+  brand        String? @db.VarChar(150)
+  model        String? @db.VarChar(150)
+  serialNumber String? @map("serial_number") @db.VarChar(150)
+
+  location   String? @db.VarChar(150)
+  department String? @db.VarChar(150)
+  assignedTo String? @map("assigned_to") @db.VarChar(150)
+
+  purchaseDate DateTime? @map("purchase_date")
+  warrantyEnd  DateTime? @map("warranty_end")
+
+  status         AssetStatus @default(ACTIVE)
+  specifications Json?
+  notes          String?     @db.Text
+
+  category AssetCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  maintenanceRecords MaintenanceRecord[]
+  schedules          MaintenanceSchedule[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([categoryId])
+  @@index([location])
+  @@index([status])
+  @@map("assets")
+}
+
+model MaintenanceRecord {
+  id              Int    @id @default(autoincrement())
+  maintenanceCode String @unique @map("maintenance_code") @db.VarChar(50)
+
+  assetId      Int @map("asset_id")
+  technicianId Int @map("technician_id")
+
+  scheduleId Int? @unique @map("schedule_id")
+
+  maintenanceDate DateTime        @map("maintenance_date")
+  maintenanceType MaintenanceType @map("maintenance_type")
+
+  description String             @db.Text
+  actionTaken String?            @map("action_taken") @db.Text
+  findings    String?            @db.Text
+  result      MaintenanceResult?
+  status      MaintenanceStatus  @default(PENDING)
+
+  nextMaintenanceDate DateTime? @map("next_maintenance_date")
+  completedAt         DateTime? @map("completed_at")
+
+  asset      Asset @relation(fields: [assetId], references: [id])
+  technician User  @relation("TechnicianRecords", fields: [technicianId], references: [id])
+
+  schedule MaintenanceSchedule? @relation(fields: [scheduleId], references: [id])
+
+  signatures MaintenanceSignature[]
+  history    MaintenanceHistory[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([assetId])
+  @@index([technicianId])
+  @@index([maintenanceDate])
+  @@index([status])
+  @@map("maintenance_records")
+}
+
+model MaintenanceSignature {
+  id            Int        @id @default(autoincrement())
+  maintenanceId Int        @map("maintenance_id")
+  signerId      Int?       @map("signer_id")
+  signerName    String     @map("signer_name") @db.VarChar(150)
+  signerRole    SignerRole @map("signer_role")
+
+  signatureImage String   @map("signature_image") @db.Text
+  signedAt       DateTime @default(now()) @map("signed_at")
+
+  maintenance MaintenanceRecord @relation(fields: [maintenanceId], references: [id])
+  signer      User?             @relation(fields: [signerId], references: [id])
+
+  @@unique([maintenanceId, signerRole])
+  @@map("maintenance_signatures")
+}
+
+model MaintenanceSchedule {
+  id          Int @id @default(autoincrement())
+  assetId     Int @map("asset_id")
+  createdById Int @map("created_by_id")
+
+  title       String  @db.VarChar(150)
+  description String? @db.Text
+
+  scheduledDate DateTime @map("scheduled_date")
+  repeatMonths  Int?     @map("repeat_months")
+
+  status ScheduleStatus @default(SCHEDULED)
+
+  asset     Asset @relation(fields: [assetId], references: [id])
+  createdBy User  @relation("ScheduleCreator", fields: [createdById], references: [id])
+
+  maintenanceRecord MaintenanceRecord?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([scheduledDate, status])
+  @@index([assetId])
+  @@map("maintenance_schedules")
+}
+
+model MaintenanceHistory {
+  id            Int                @id @default(autoincrement())
+  maintenanceId Int                @map("maintenance_id")
+  changedBy     Int                @map("changed_by")
+  oldStatus     MaintenanceStatus? @map("old_status")
+  newStatus     MaintenanceStatus  @map("new_status")
+  remarks       String?            @db.Text
+
+  maintenance MaintenanceRecord @relation(fields: [maintenanceId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([maintenanceId])
+  @@map("maintenance_history")
+}
